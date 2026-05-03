@@ -8,6 +8,7 @@ import { hashPassword } from 'src/auth/utils/password.util';
 import type { SoftDeleteModel } from 'mongoose-delete';
 import { MongoServerError } from 'mongodb';
 import { IUser } from './users.interface';
+import aqp from 'api-query-params';
 
 @Injectable()
 export class UsersService {
@@ -105,8 +106,33 @@ export class UsersService {
 
     }
 
-    findAll() {
-        return `This action returns all users`;
+    async findAll(currentPage: number, limit: number, qs: string) {
+        const { filter, sort, projection, population } = aqp(qs);
+        delete filter.current;
+        delete filter.pageSize;
+
+        const offset = (currentPage - 1) * (limit);
+        const defaultLimit = limit ? +limit : 10;
+        const totalItems = await this.userModel.countDocuments(filter);
+        const totalPages = Math.ceil(totalItems / defaultLimit);
+
+        const result = await this.userModel.find(filter)
+            .skip(offset)
+            .limit(defaultLimit)
+            .sort(sort as any)
+            .select('-password -refreshToken')
+            .populate(population)
+            .exec();
+
+        return {
+            meta: {
+                current: currentPage, //trang hiện tại
+                pageSize: limit, //số lượng bản ghi đã lấy
+                pages: totalPages, //tổng số trang với điều kiện query
+                total: totalItems // tổng số phần tử (số bản ghi)
+            },
+            result //kết quả query
+        }
     }
 
     findOneByUsername(username: string) {
@@ -115,26 +141,47 @@ export class UsersService {
         });
     }
 
-    findById(id: string) {
+    async findById(id: string) {
         // return `This action returns a #${id} user`;
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return 'Not found user'; // Hoặc bạn có thể trả về một lỗi hoặc giá trị mặc định khác
         }
-        return this.userModel.findById(id);
-        //tìm user theo id trong database, this là để truy cập đến class userModel đã được inject ở constructor, findById là hàm của mongoose để tìm theo id, id là tham số truyền vào hàm findOne
+        const user = await this.userModel
+            .findById(id)
+            .select('-password -refreshToken')
+        return user;
+
     }
 
-    async update(id: string, updateUserDto: UpdateUserDto) {
+    async update(id: string, updateUserDto: UpdateUserDto, user: IUser) {
         // return `This action updates a #${id} user`;
-        return await this.userModel.updateOne({ _id: id }, { ...updateUserDto });
+        const userUpdate = await this.userModel.updateOne(
+            { _id: id },
+            {
+                ...updateUserDto,
+                updatedBy:
+                {
+                    _id: user._id,
+                    email: user.email
+                }
+            });
+        return userUpdate
     }
 
-    remove(id: string) {
+    async remove(id: string, user: IUser) {
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return 'Not found user';
         }
+        await this.userModel.updateOne(
+            { _id: id },
+            {
+                deletedBy: {
+                    _id: user._id,
+                    email: user.email
+                }
+            }
+        )
         return this.userModel.delete({ _id: id });
 
-        // return `This action removes a #${id} user`;
     }
 }

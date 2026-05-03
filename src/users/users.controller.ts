@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto, RegisterUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -27,23 +27,32 @@ export class UsersController {
     }
 
     @Get()
-    findAll() {
-        return this.usersService.findAll();
+    @ResponseMessage('Get all users with pagination')
+    findAll(
+        @Query('current') currentPage:number,
+        @Query('pageSize') limit:number,
+        @Query() qs:string
+    ) {
+        return this.usersService.findAll(currentPage,limit,qs);
     }
 
+    @Public()
     @Get(':id')
+    @ResponseMessage('Get a user by id')
     findById(@Param('id') id: string) {
         // @Param() params: any //cái @Param() này để lấy dữ liệu từ params url như nodejs là req.params
         return this.usersService.findById(id);
     }
 
     @Patch(':id')
-    update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-        return this.usersService.update(id, updateUserDto);
+    @ResponseMessage('User updated successfully')
+    update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto, @User() user: IUser) {
+        return this.usersService.update(id, updateUserDto, user);
     }
 
     @Delete(':id')
-    remove(@Param('id') id: string) {
-        return this.usersService.remove(id);
+    @ResponseMessage('User deleted successfully')
+    remove(@Param('id') id: string, @User() user: IUser) {
+        return this.usersService.remove(id, user);
     }
 }
