@@ -184,4 +184,13 @@ export class UsersService {
         return this.userModel.delete({ _id: id });
 
     }
+
+    updateRefreshToken = async (id: string, refreshToken: string) => {
+        //khi login và validate đúng, thì toàn bộ thông tin user sẽ được gắn vào req.user và gửi đến server, controller sẽ gọi hàm trong file service tương ứng để thực thi, trong đó có trường _id 
+        const refresh_Token = await this.userModel.updateOne(
+            { _id: id },
+            { refreshToken }
+        )
+        return refresh_Token
+    }
 }
