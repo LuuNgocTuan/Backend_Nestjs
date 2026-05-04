@@ -1,11 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
 import { comparePassword } from './utils/password.util';
 import { JwtService } from '@nestjs/jwt';
 import { IUser } from 'src/users/users.interface';
 import { RegisterUserDto } from 'src/users/dto/create-user.dto';
 import { ConfigService } from '@nestjs/config';
-import { Response } from 'express';
+import { Response, response } from 'express';
+import { hashRefreshToken } from './utils/token.until';
+import * as bcrypt from 'bcrypt';
+
 
 @Injectable()
 export class AuthService {
@@ -49,8 +52,12 @@ export class AuthService {
 
         const refresh_token = await this.createRefreshToken(payload)
 
+        //Hash refresh token
+        const hashedRefreshToken = await hashRefreshToken(refresh_token);
+
         //update user in DB with refresh token
-        await this.usersService.updateRefreshToken(_id, refresh_token)
+        await this.usersService.updateRefreshToken(_id, hashedRefreshToken)
+        response.clearCookie('refresh_token')
 
         //set refresh token as cookies
         response.cookie('refresh_token', refresh_token,
@@ -87,6 +94,78 @@ export class AuthService {
             }
         )
         return refresh_Token
+    }
+
+    processNewToken = async (refreshToken: string, response: Response) => {
+        try {
+            //kiểm tra refresh token lấy từ cookie do client gửi lên server có hợp lệ không
+            const payload = await this.jwtService.verify(refreshToken,
+                {
+                    secret: this.configService.get<string>('JWT_REFRESH_TOKEN_SECRET')
+                }
+            )
+            // console.log(payload);
+
+            //tìm kiếm user dưới DB có _id trùng với _id sau khi verify
+            const user = await this.usersService.findRefreshTokenById(payload._id)
+            // console.log(user);
+
+            if (!user || !user.refreshToken) {
+                throw new BadRequestException('Invalid refresh token.Please log in again')
+            }
+            const isValid = await bcrypt.compare(refreshToken, user.refreshToken);
+            if (!isValid) {
+                throw new BadRequestException('Invalid refresh token.Please log in again');
+            }
+
+            //Nếu refresh token client gửi lên là hợp lệ thì tạo access token mới
+            const { _id, name, email, role } = user
+            const newPayload = {
+                sub: "token refresh",
+                iss: "from cookies",
+                _id,
+                name,
+                email,
+                role
+            }
+
+            //Tạo mới refresh token
+            const new_refresh_token = await this.createRefreshToken(newPayload)
+
+            //Hash refresh token mới
+            const newHashedRefreshToken = await hashRefreshToken(new_refresh_token);
+
+            //update user in DB with refresh token
+            await this.usersService.updateRefreshToken(_id.toString(), newHashedRefreshToken)
+
+            response.clearCookie('refresh_token')
+            //set refresh token as cookies
+            response.cookie('refresh_token', new_refresh_token,
+                {
+                    httpOnly: true,
+                    maxAge: this.configService.get<number>('jwt.refreshExpire')
+                }
+            )
+
+            return {
+                new_access_token: this.jwtService.sign(newPayload),
+                user: {
+                    _id,
+                    name,
+                    email,
+                    role
+                }
+            };
+
+        } catch (error) {
+            throw new BadRequestException('Invalid refresh token.Please log in again')
+        }
+    }
+
+    logout = async (user: IUser, response: Response) => {
+        await this.usersService.updateRefreshToken(user._id, "")
+        response.clearCookie('refresh_token')
+        return "Ok"
     }
 
 }

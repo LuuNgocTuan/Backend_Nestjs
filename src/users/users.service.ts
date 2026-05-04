@@ -3,7 +3,7 @@ import { CreateUserDto, RegisterUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { User, UserDocument } from './schemas/user.schema';
-import mongoose, { Model } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { hashPassword } from 'src/auth/utils/password.util';
 import type { SoftDeleteModel } from 'mongoose-delete';
 import { MongoServerError } from 'mongodb';
@@ -192,5 +192,14 @@ export class UsersService {
             { refreshToken }
         )
         return refresh_Token
+    }
+
+    async findRefreshTokenById(id: string) {
+        const refresh_token = await this.userModel.findOne(
+            {
+                _id: id,
+            },
+        )
+        return refresh_token
     }
 }
